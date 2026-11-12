@@ -1,0 +1,1292 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chess Arena</title>
+
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#11151e;color:white;font-family:Arial,sans-serif;min-height:100vh}
+header{height:70px;background:#181e29;border-bottom:1px solid #30394a;display:flex;align-items:center;padding:0 28px;gap:12px}
+.logo{font-size:23px;font-weight:bold;letter-spacing:1px}
+.logo span{color:#79aaff}
+.engine-label{font-size:11px;color:#83b5ff;background:#23334c;padding:6px 9px;border-radius:5px}
+.container{max-width:1100px;margin:30px auto;padding:15px;display:grid;grid-template-columns:minmax(280px,600px) 280px;gap:25px;justify-content:center}
+.game-area{width:100%;min-width:0}
+.player{height:49px;display:flex;align-items:center;justify-content:space-between;background:#202735;border-radius:8px;padding:0 14px;margin-bottom:10px}
+.player.active{outline:2px solid #75a7ff}
+.player-info{display:flex;align-items:center;gap:10px}
+.avatar{font-size:25px}
+.board-wrap{position:relative;width:100%;aspect-ratio:1;overflow:hidden;border-radius:5px;touch-action:pan-y}
+#board{width:100%;height:100%;display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr)}
+.square{position:relative;display:flex;align-items:center;justify-content:center;user-select:none;touch-action:manipulation;font-size:clamp(27px,7vw,65px);line-height:1;cursor:pointer}
+.light{background:#e9e3d5}
+.dark{background:#75966b}
+.square.selected{background:#c7c94d!important}
+.square.last{background:#baca50}
+.square.hint{box-shadow:inset 0 0 0 5px #e4bc36}
+.piece{position:relative;z-index:2;cursor:grab;line-height:1;touch-action:none}
+.piece:active{cursor:grabbing}
+.white-piece{color:#fff;-webkit-text-stroke:1px #343434;text-shadow:0 2px 3px #3338}
+.black-piece{color:#222;-webkit-text-stroke:1px #aaa}
+.square.target:after{content:"";position:absolute;width:25%;height:25%;border-radius:50%;background:#243a2880;z-index:1;pointer-events:none}
+.square.target.capture:after{width:85%;height:85%;background:transparent;border:5px solid #243a2880}
+.square.premove-target:after{content:"";position:absolute;width:24%;height:24%;border-radius:50%;background:#e3a72a;opacity:.8;z-index:1;pointer-events:none}
+.square.premove-target.capture:after{width:85%;height:85%;background:transparent;border:5px solid #e3a72a}
+.coordinates{position:absolute;font-size:11px;font-weight:bold;pointer-events:none;z-index:3}
+.coordinate-file{bottom:3px;right:5px}
+.coordinate-rank{top:3px;left:5px}
+.light .coordinates{color:#75966b}
+.dark .coordinates{color:#e9e3d5}
+#arrows{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4}
+.arrow{stroke:#f5bd32;stroke-width:8;stroke-linecap:round;opacity:.85;fill:none;marker-end:url(#arrowhead)}
+.premove-arrow{stroke:#55c9ee;stroke-dasharray:13 8;opacity:.95}
+.controls{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+button,select{background:#283347;color:white;border:1px solid #3b4960;border-radius:7px;padding:11px 14px;cursor:pointer;font-size:13px}
+button:hover{background:#3a4c69}
+button.primary{background:#467ee8;border-color:#467ee8}
+button:disabled{opacity:.4;cursor:not-allowed}
+.panel{background:#1c2431;border:1px solid #303a4b;border-radius:10px;padding:18px;margin-bottom:15px}
+.panel h3{margin:0 0 15px;font-size:15px}
+#status{background:#24334a;border-radius:7px;padding:13px;margin-bottom:14px;font-size:14px;color:#c6dcff}
+#history{height:240px;overflow-y:auto;font-size:13px}
+.history-row{display:grid;grid-template-columns:35px 1fr 1fr;padding:9px 5px;border-bottom:1px solid #303949}
+.history-row:nth-child(even){background:#222d3d}
+.small-text{color:#8997ac;font-size:12px;line-height:1.6}
+#promotion{position:fixed;inset:0;background:#000a;z-index:20;display:none;align-items:center;justify-content:center}
+.promotion-box{background:#202a39;padding:25px;border-radius:12px;text-align:center}
+.promotion-options{display:flex;gap:12px;margin-top:15px}
+.promotion-options button{font-size:40px;padding:10px;width:65px}
+#engineStatus{font-size:12px;color:#91b9ff;margin-top:8px}
+#thinkingBar{height:4px;background:#303c50;border-radius:5px;margin-top:12px;overflow:hidden}
+#thinkingFill{height:100%;width:0;background:#69a0ff;transition:width .3s}
+#premoveInfo{color:#e7bd65;font-size:12px;min-height:17px;margin-top:10px}
+@media(max-width:800px){.container{grid-template-columns:1fr;max-width:600px}.sidebar{display:grid;grid-template-columns:1fr}}
+</style>
+</head>
+
+<body>
+
+<header>
+    <div class="logo">CHESS <span>ARENA</span></div>
+    <span class="engine-label">STOCKFISH ENGINE</span>
+</header>
+
+<div class="container">
+
+<div class="game-area">
+
+    <div class="player" id="blackPlayer">
+        <div class="player-info">
+            <span class="avatar">♟</span>
+            <div><b>Stockfish AI</b><br><span class="small-text">Black</span></div>
+        </div>
+        <span id="blackThinking" class="small-text">Loading engine...</span>
+    </div>
+
+    <div class="board-wrap">
+        <div id="board"></div>
+        <svg id="arrows" viewBox="0 0 800 800" preserveAspectRatio="none">
+            <defs>
+                <marker id="arrowhead" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                    <polygon points="0 0,5 2.5,0 5" fill="#f5bd32"/>
+                </marker>
+            </defs>
+        </svg>
+    </div>
+
+    <div class="player active" id="whitePlayer">
+        <div class="player-info">
+            <span class="avatar">♙</span>
+            <div><b>You</b><br><span class="small-text">White</span></div>
+        </div>
+        <span class="small-text">Player</span>
+    </div>
+
+    <div class="controls">
+        <button onclick="undoMove()">↶ Undo</button>
+        <button onclick="restartGame()">⟳ Restart</button>
+        <button onclick="clearArrows()">Clear plans</button>
+        <button class="primary" onclick="showHint()">Hint</button>
+    </div>
+
+    <div id="premoveInfo"></div>
+
+    <p class="small-text">
+        Left-click or drag pieces to move. Right-click two squares to draw a planning arrow.
+        During the AI's turn, select a piece and its destination to queue a premove.
+    </p>
+
+</div>
+
+<div class="sidebar">
+
+    <div class="panel">
+        <h3>Game status</h3>
+        <div id="status">Loading chess engine...</div>
+
+        <label class="small-text">AI difficulty</label><br><br>
+        <select id="difficulty" style="width:100%">
+            <option value="1">Easy</option>
+            <option value="2" selected>Medium</option>
+            <option value="3">Hard</option>
+        </select>
+
+        <div id="engineStatus">Connecting to Stockfish...</div>
+        <div id="thinkingBar"><div id="thinkingFill"></div></div>
+    </div>
+
+    <div class="panel">
+        <h3>Move history</h3>
+        <div id="history"><div class="small-text">No moves yet.</div></div>
+    </div>
+
+    <div class="panel">
+        <h3>Move planning</h3>
+        <p class="small-text">
+            Yellow arrows are your plans. Blue dashed arrows are queued premoves.
+            Planning arrows never move pieces.
+        </p>
+        <button onclick="clearArrows()" style="width:100%">Clear arrows</button>
+        <button onclick="cancelPremove()" style="width:100%;margin-top:8px">Cancel premove</button>
+    </div>
+
+</div>
+</div>
+
+<div id="promotion">
+    <div class="promotion-box">
+        <h3>Choose promotion piece</h3>
+        <div class="promotion-options" id="promotionOptions"></div>
+    </div>
+</div>
+
+<script type="module">
+
+import { Chess } from "https://esm.sh/chess.js@1.4.0";
+
+// ======================================================
+// GAME SETUP
+// ======================================================
+
+const game = new Chess();
+
+const board = document.getElementById("board");
+const historyBox = document.getElementById("history");
+const statusBox = document.getElementById("status");
+const arrowsSvg = document.getElementById("arrows");
+
+const files = "abcdefgh";
+const ranks = "87654321";
+
+const symbols = {
+    wk:"♔", wq:"♕", wr:"♖", wb:"♗", wn:"♘", wp:"♙",
+    bk:"♚", bq:"♛", br:"♜", bb:"♝", bn:"♞", bp:"♟"
+};
+
+let selected = null;
+let legalTargets = [];
+let premoveTargets = [];
+let lastMove = null;
+let thinking = false;
+let engineReady = false;
+let engineSearching = false;
+let arrowStart = null;
+let arrows = [];
+let premove = null;
+let hintMove = null;
+let draggedFrom = null;
+let suppressClick = false;
+let pendingPromotion = null;
+let gameVersion = 0;
+
+// ======================================================
+// STOCKFISH ENGINE
+// ======================================================
+
+// Single-threaded WASM engine.
+// The matching WASM file is loaded automatically from
+// the same directory as this worker.
+
+const ENGINE_URL =
+"https://cdn.jsdelivr.net/npm/stockfish@19.0.1/src/stockfish-19-lite-single.js";
+
+let engine;
+
+try {
+    engine = new Worker(ENGINE_URL);
+
+    engine.onmessage = event => {
+        handleEngineMessage(
+            typeof event.data === "string"
+            ? event.data
+            : String(event.data)
+        );
+    };
+
+    engine.onerror = event => {
+        document.getElementById("engineStatus").textContent =
+            "Engine failed to load. Check your internet connection.";
+        console.error("Stockfish error:",event);
+    };
+
+    engine.postMessage("uci");
+
+} catch(error) {
+    document.getElementById("engineStatus").textContent =
+        "Could not start Stockfish.";
+    console.error(error);
+}
+
+function handleEngineMessage(message) {
+
+    if(message === "uciok") {
+
+        engine.postMessage("setoption name Threads value 1");
+        engine.postMessage("setoption name Hash value 128");
+        engine.postMessage("setoption name UCI_AnalyseMode value false");
+        engine.postMessage("isready");
+
+    }
+
+    if(message === "readyok") {
+
+        engineReady = true;
+
+        document.getElementById("engineStatus").textContent =
+            "Stockfish ready";
+
+        document.getElementById("blackThinking").textContent =
+            "Ready";
+
+        updateInterface();
+
+        if(game.turn() === "b")
+            startAI();
+    }
+
+    if(message.startsWith("info ")) {
+
+        const depthMatch = message.match(/\bdepth (\d+)/);
+        const scoreMatch = message.match(/\bscore cp (-?\d+)/);
+
+        if(depthMatch) {
+            document.getElementById("blackThinking").textContent =
+                "Depth " + depthMatch[1];
+        }
+
+        if(scoreMatch) {
+            const score = Number(scoreMatch[1])/100;
+            document.getElementById("engineStatus").textContent =
+                "Evaluation: " + (score > 0 ? "+" : "") + score.toFixed(2);
+        }
+    }
+
+    if(message.startsWith("bestmove ")) {
+
+        if(!engineSearching) return;
+
+        engineSearching = false;
+        thinking = false;
+
+        document.getElementById("thinkingFill").style.width = "0%";
+
+        const uci = message.split(/\s+/)[1];
+
+        if(uci && uci !== "(none)" && !game.isGameOver()) {
+
+            const from = uci.substring(0,2);
+            const to = uci.substring(2,4);
+            const promotion = uci.substring(4,5);
+
+            try {
+                const move = game.move({
+                    from,
+                    to,
+                    promotion: promotion || "q"
+                });
+
+                if(move) {
+                    lastMove = {from:move.from,to:move.to};
+                    selected = null;
+                    legalTargets = [];
+                    hintMove = null;
+                }
+
+            } catch(error) {
+                console.error("Engine returned an invalid move:",uci,error);
+            }
+        }
+
+        document.getElementById("blackThinking").textContent = "Ready";
+
+        // Try the queued white premove immediately.
+        tryPremove();
+
+        render();
+
+        if(game.turn() === "b" && !game.isGameOver()) {
+            startAI();
+        }
+    }
+}
+
+// ======================================================
+// AI DIFFICULTY
+// ======================================================
+
+function getEngineSettings() {
+
+    const difficulty = Number(
+        document.getElementById("difficulty").value
+    );
+
+    if(difficulty === 1) {
+        return {
+            skill:4,
+            depth:7,
+            time:400
+        };
+    }
+
+    if(difficulty === 2) {
+        return {
+            skill:12,
+            depth:13,
+            time:1600
+        };
+    }
+
+    return {
+        skill:20,
+        depth:19,
+        time:4000
+    };
+}
+
+function startAI() {
+
+    if(!engineReady || engineSearching ||
+       game.turn() !== "b" || game.isGameOver())
+        return;
+
+    thinking = true;
+    engineSearching = true;
+
+    document.getElementById("blackThinking").textContent =
+        "Thinking...";
+
+    document.getElementById("engineStatus").textContent =
+        "Analyzing possible moves...";
+
+    updateInterface();
+
+    const settings = getEngineSettings();
+
+    engine.postMessage(
+        "setoption name Skill Level value " + settings.skill
+    );
+
+    engine.postMessage("position fen " + game.fen());
+
+    engine.postMessage(
+        "go depth " + settings.depth +
+        " movetime " + settings.time
+    );
+
+    document.getElementById("thinkingFill").style.width = "35%";
+}
+
+// ======================================================
+// BOARD COORDINATES
+// ======================================================
+
+function squareName(row,col) {
+    return files[col] + ranks[row];
+}
+
+function squareCoords(name) {
+    const col = files.indexOf(name[0]);
+    const row = 8-Number(name[1]);
+
+    return {
+        x:col*100+50,
+        y:row*100+50
+    };
+}
+
+// ======================================================
+// RENDER BOARD
+// ======================================================
+
+function render() {
+
+    board.innerHTML = "";
+
+    const position = game.board();
+
+    for(let row=0;row<8;row++) {
+        for(let col=0;col<8;col++) {
+
+            const name = squareName(row,col);
+            const piece = position[row][col];
+
+            const square = document.createElement("div");
+
+            square.className =
+                "square " + ((row+col)%2 ? "dark":"light");
+
+            square.dataset.square = name;
+
+            if(selected === name)
+                square.classList.add("selected");
+
+            if(lastMove &&
+                (lastMove.from === name || lastMove.to === name))
+                square.classList.add("last");
+
+            if(hintMove &&
+                (hintMove.from === name || hintMove.to === name))
+                square.classList.add("hint");
+
+            if(legalTargets.includes(name))
+                square.classList.add("target");
+
+            if(premoveTargets.includes(name))
+                square.classList.add("premove-target");
+
+            if(piece) {
+
+                const color = piece.color;
+
+                const span = document.createElement("span");
+
+                span.className =
+                    "piece " +
+                    (color === "w" ? "white-piece":"black-piece");
+
+                span.textContent = symbols[color+piece.type];
+
+                if(color === "w") {
+                    span.draggable = true;
+
+                    span.addEventListener("dragstart",e => {
+
+                        if(game.isGameOver()) {
+                            e.preventDefault();
+                            return;
+                        }
+
+                        draggedFrom = name;
+                        e.dataTransfer.setData("text/plain",name);
+                        e.dataTransfer.effectAllowed = "move";
+
+                        if(game.turn() === "w" && !thinking) {
+                            selectSquare(name);
+                        } else if(game.turn() === "b" && thinking) {
+                            selectPremoveSquare(name);
+                        }
+                    });
+
+                    span.addEventListener("dragend",() => {
+                        draggedFrom = null;
+                    });
+                }
+
+                square.appendChild(span);
+
+                if(piece.color === "w" && game.turn() === "b" && thinking)
+                    square.style.cursor = "grab";
+            }
+
+            if(col === 0) {
+                const rank = document.createElement("span");
+                rank.className = "coordinates coordinate-rank";
+                rank.textContent = 8-row;
+                square.appendChild(rank);
+            }
+
+            if(row === 7) {
+                const file = document.createElement("span");
+                file.className = "coordinates coordinate-file";
+                file.textContent = files[col];
+                square.appendChild(file);
+            }
+
+            square.addEventListener("click",() => {
+
+                if(suppressClick) {
+                    suppressClick = false;
+                    return;
+                }
+
+                handleClick(name);
+            });
+
+            square.addEventListener("dragover",e => {
+                e.preventDefault();
+            });
+
+            square.addEventListener("drop",e => {
+                e.preventDefault();
+
+                const from = e.dataTransfer.getData("text/plain") ||
+                    draggedFrom;
+
+                if(!from) return;
+
+                suppressClick = true;
+
+                if(game.turn() === "w" && !thinking)
+                    attemptNormalMove(from,name);
+                else if(game.turn() === "b" && thinking)
+                    queuePremove(from,name);
+
+                draggedFrom = null;
+
+                setTimeout(() => suppressClick = false,100);
+            });
+
+            square.addEventListener("contextmenu",e => {
+                e.preventDefault();
+                planSquare(name);
+            });
+
+            board.appendChild(square);
+        }
+    }
+
+    drawArrows();
+    updateInterface();
+}
+
+// ======================================================
+// NORMAL MOVE SELECTION
+// ======================================================
+
+function selectSquare(name) {
+
+    const piece = game.get(name);
+
+    if(!piece || piece.color !== "w") return;
+
+    selected = name;
+
+    legalTargets = game.moves({
+        square:name,
+        verbose:true
+    }).map(m => m.to);
+
+    render();
+}
+
+function handleClick(name) {
+
+    if(game.isGameOver()) return;
+
+    if(game.turn() === "b" && thinking) {
+        handlePremoveClick(name);
+        return;
+    }
+
+    if(game.turn() !== "w" || thinking) return;
+
+    hintMove = null;
+
+    const piece = game.get(name);
+
+    if(selected === null) {
+
+        if(piece && piece.color === "w")
+            selectSquare(name);
+
+        return;
+    }
+
+    if(selected === name) {
+        selected = null;
+        legalTargets = [];
+        render();
+        return;
+    }
+
+    if(piece && piece.color === "w") {
+        selectSquare(name);
+        return;
+    }
+
+    attemptNormalMove(selected,name);
+}
+
+function attemptNormalMove(from,to) {
+
+    if(thinking || game.turn() !== "w") return;
+
+    const moves = game.moves({
+        square:from,
+        verbose:true
+    }).filter(m => m.to === to);
+
+    if(!moves.length) {
+        selected = null;
+        legalTargets = [];
+        render();
+        return;
+    }
+
+    if(moves.some(m => m.promotion)) {
+        pendingPromotion = {from,to};
+        showPromotion();
+        return;
+    }
+
+    makeMove(from,to);
+}
+
+function makeMove(from,to,promotion="q") {
+
+    try {
+
+        const move = game.move({
+            from,
+            to,
+            promotion
+        });
+
+        if(!move) return false;
+
+        gameVersion++;
+
+        lastMove = {
+            from:move.from,
+            to:move.to
+        };
+
+        selected = null;
+        legalTargets = [];
+        premoveTargets = [];
+        hintMove = null;
+
+        clearPremove(false);
+
+        render();
+
+        if(!game.isGameOver() && game.turn() === "b")
+            startAI();
+
+        return true;
+
+    } catch(error) {
+        console.error(error);
+        return false;
+    }
+}
+
+// ======================================================
+// PROMOTION
+// ======================================================
+
+function showPromotion() {
+
+    const box = document.getElementById("promotion");
+    const options = document.getElementById("promotionOptions");
+
+    options.innerHTML = "";
+
+    for(const type of ["q","r","b","n"]) {
+
+        const button = document.createElement("button");
+
+        button.textContent = symbols["w"+type];
+
+        button.onclick = () => {
+
+            const p = pendingPromotion;
+
+            box.style.display = "none";
+            pendingPromotion = null;
+
+            if(p)
+                makeMove(p.from,p.to,type);
+        };
+
+        options.appendChild(button);
+    }
+
+    box.style.display = "flex";
+}
+
+// ======================================================
+// PREMOVES
+// ======================================================
+
+// A premove is recorded while the AI is thinking.
+// It is only executed after the AI has completed its move.
+// chess.js checks the actual legality at execution time.
+//
+// This means a knight premove can use its true L shape,
+// including the normal two-square/one-square movement.
+
+function selectPremoveSquare(name) {
+
+    const piece = game.get(name);
+
+    if(!piece || piece.color !== "w") return;
+
+    selected = name;
+    legalTargets = [];
+    premoveTargets = getPremoveTargets(name);
+
+    render();
+}
+
+function getPremoveTargets(from) {
+
+    const piece = game.get(from);
+    if(!piece || piece.color !== "w") return [];
+
+    const col = files.indexOf(from[0]);
+    const row = 8-Number(from[1]);
+
+    const targets = [];
+
+    function add(r,c) {
+        if(r<0 || r>7 || c<0 || c>7) return false;
+
+        const name = squareName(r,c);
+        const target = game.get(name);
+
+        if(target && target.color === "w") return false;
+
+        targets.push(name);
+
+        return !target;
+    }
+
+    if(piece.type === "n") {
+
+        const jumps = [
+            [-2,-1],[-2,1],[-1,-2],[-1,2],
+            [1,-2],[1,2],[2,-1],[2,1]
+        ];
+
+        for(const [dr,dc] of jumps)
+            add(row+dr,col+dc);
+    }
+
+    if(piece.type === "k") {
+
+        for(let dr=-1;dr<=1;dr++)
+            for(let dc=-1;dc<=1;dc++)
+                if(dr || dc) add(row+dr,col+dc);
+    }
+
+    if(piece.type === "p") {
+
+        add(row-1,col);
+
+        if(row===6) add(row-2,col);
+
+        add(row-1,col-1);
+        add(row-1,col+1);
+    }
+
+    const directions = [];
+
+    if(["b","q"].includes(piece.type))
+        directions.push([-1,-1],[-1,1],[1,-1],[1,1]);
+
+    if(["r","q"].includes(piece.type))
+        directions.push([-1,0],[1,0],[0,-1],[0,1]);
+
+    for(const [dr,dc] of directions) {
+
+        let r=row+dr;
+        let c=col+dc;
+
+        while(r>=0 && r<8 && c>=0 && c<8) {
+
+            const canContinue = add(r,c);
+
+            if(!canContinue) break;
+
+            r+=dr;
+            c+=dc;
+        }
+    }
+
+    return [...new Set(targets)];
+}
+
+function handlePremoveClick(name) {
+
+    const piece = game.get(name);
+
+    if(selected === null) {
+
+        if(piece && piece.color === "w")
+            selectPremoveSquare(name);
+
+        return;
+    }
+
+    if(selected === name) {
+        selected = null;
+        premoveTargets = [];
+        render();
+        return;
+    }
+
+    if(piece && piece.color === "w") {
+        selectPremoveSquare(name);
+        return;
+    }
+
+    queuePremove(selected,name);
+}
+
+function queuePremove(from,to) {
+
+    if(!thinking || game.turn() !== "b") return;
+
+    const piece = game.get(from);
+
+    if(!piece || piece.color !== "w") return;
+
+    const targets = getPremoveTargets(from);
+
+    if(!targets.includes(to)) {
+        selected = null;
+        premoveTargets = [];
+        render();
+        return;
+    }
+
+    let promotion = "q";
+
+    if(piece.type === "p" && to[1] === "8")
+        promotion = "q";
+
+    premove = {
+        from,
+        to,
+        promotion
+    };
+
+    selected = null;
+    premoveTargets = [];
+    legalTargets = [];
+
+    document.getElementById("premoveInfo").textContent =
+        "Queued: " + from + " → " + to;
+
+    render();
+}
+
+function tryPremove() {
+
+    if(!premove) return;
+
+    const queued = premove;
+
+    premove = null;
+
+    document.getElementById("premoveInfo").textContent =
+        "Checking premove...";
+
+    if(game.turn() !== "w" || game.isGameOver()) {
+        cancelPremove();
+        return;
+    }
+
+    try {
+
+        const move = game.move({
+            from:queued.from,
+            to:queued.to,
+            promotion:queued.promotion
+        });
+
+        if(move) {
+
+            gameVersion++;
+
+            lastMove = {
+                from:move.from,
+                to:move.to
+            };
+
+            document.getElementById("premoveInfo").textContent =
+                "Premove played!";
+
+        } else {
+            cancelPremove();
+        }
+
+    } catch(error) {
+
+        document.getElementById("premoveInfo").textContent =
+            "Premove was no longer legal.";
+
+        console.log("Premove rejected:",error);
+    }
+}
+
+function clearPremove(update=true) {
+
+    premove = null;
+    premoveTargets = [];
+
+    document.getElementById("premoveInfo").textContent = "";
+
+    if(update) render();
+}
+
+function cancelPremove() {
+    clearPremove(true);
+}
+
+// ======================================================
+// DRAG AND DROP
+// ======================================================
+
+// Pieces are draggable using the browser's native drag
+// and drop system. The drop destination is checked against
+// chess.js before a move is made.
+
+document.addEventListener("dragover",e => {
+    if(e.target.closest(".square"))
+        e.preventDefault();
+});
+
+// ======================================================
+// RIGHT-CLICK PLANNING ARROWS
+// ======================================================
+
+function planSquare(name) {
+
+    if(arrowStart === null) {
+
+        arrowStart = name;
+
+    } else {
+
+        if(arrowStart === name) {
+
+            arrows = arrows.filter(a => a.from !== name);
+
+        } else {
+
+            const existing = arrows.findIndex(a =>
+                a.from === arrowStart && a.to === name
+            );
+
+            if(existing >= 0) {
+                arrows.splice(existing,1);
+            } else {
+                arrows.push({
+                    from:arrowStart,
+                    to:name
+                });
+            }
+        }
+
+        arrowStart = null;
+    }
+
+    drawArrows();
+}
+
+function drawArrows() {
+
+    arrowsSvg.innerHTML = `
+        <defs>
+            <marker id="arrowhead" markerWidth="5"
+                markerHeight="5" refX="4" refY="2.5"
+                orient="auto">
+                <polygon points="0 0,5 2.5,0 5"
+                    fill="#f5bd32"/>
+            </marker>
+        </defs>
+    `;
+
+    for(const arrow of arrows) {
+
+        const from = squareCoords(arrow.from);
+        const to = squareCoords(arrow.to);
+
+        const line = document.createElementNS(
+            "http://www.w3.org/2000/svg","line"
+        );
+
+        line.setAttribute("x1",from.x);
+        line.setAttribute("y1",from.y);
+        line.setAttribute("x2",to.x);
+        line.setAttribute("y2",to.y);
+        line.setAttribute("class","arrow");
+
+        arrowsSvg.appendChild(line);
+    }
+
+    if(premove) {
+
+        const from = squareCoords(premove.from);
+        const to = squareCoords(premove.to);
+
+        const line = document.createElementNS(
+            "http://www.w3.org/2000/svg","line"
+        );
+
+        line.setAttribute("x1",from.x);
+        line.setAttribute("y1",from.y);
+        line.setAttribute("x2",to.x);
+        line.setAttribute("y2",to.y);
+        line.setAttribute("class","arrow premove-arrow");
+
+        arrowsSvg.appendChild(line);
+    }
+
+    if(arrowStart) {
+
+        const p = squareCoords(arrowStart);
+
+        const circle = document.createElementNS(
+            "http://www.w3.org/2000/svg","circle"
+        );
+
+        circle.setAttribute("cx",p.x);
+        circle.setAttribute("cy",p.y);
+        circle.setAttribute("r",13);
+        circle.setAttribute("fill","#f5bd32");
+
+        arrowsSvg.appendChild(circle);
+    }
+}
+
+function clearArrows() {
+
+    arrows = [];
+    arrowStart = null;
+
+    drawArrows();
+}
+
+// ======================================================
+// HINT SYSTEM
+// ======================================================
+
+function showHint() {
+
+    if(!engineReady || thinking ||
+       game.turn() !== "w" || game.isGameOver())
+        return;
+
+    hintMove = null;
+
+    const version = gameVersion;
+
+    const previousStatus = statusBox.textContent;
+
+    statusBox.textContent = "Analyzing your position...";
+
+    const handler = event => {
+
+        const message = String(event.data);
+
+        if(!message.startsWith("bestmove ")) return;
+
+        engine.removeEventListener("message",handler);
+
+        if(version !== gameVersion || game.turn() !== "w")
+            return;
+
+        const uci = message.split(/\s+/)[1];
+
+        if(!uci || uci === "(none)") return;
+
+        hintMove = {
+            from:uci.substring(0,2),
+            to:uci.substring(2,4)
+        };
+
+        arrows.push({
+            from:hintMove.from,
+            to:hintMove.to
+        });
+
+        render();
+    };
+
+    engine.addEventListener("message",handler);
+
+    engine.postMessage("position fen "+game.fen());
+    engine.postMessage("go depth 14");
+}
+
+// ======================================================
+// UNDO AND RESTART
+// ======================================================
+
+function undoMove() {
+
+    if(thinking || engineSearching) return;
+
+    if(game.history().length === 0) return;
+
+    game.undo();
+
+    // If the AI already moved, undo its response too.
+    if(game.turn() === "b" && game.history().length > 0)
+        game.undo();
+
+    gameVersion++;
+
+    selected = null;
+    legalTargets = [];
+    premoveTargets = [];
+    hintMove = null;
+
+    clearPremove(false);
+    clearArrows();
+
+    const history = game.history({
+        verbose:true
+    });
+
+    lastMove = null;
+
+    if(history.length) {
+        const last = history[history.length-1];
+
+        lastMove = {
+            from:last.from,
+            to:last.to
+        };
+    }
+
+    render();
+}
+
+function restartGame() {
+
+    if(engineSearching) {
+        engine.postMessage("stop");
+        engineSearching = false;
+        thinking = false;
+    }
+
+    game.reset();
+    gameVersion++;
+
+    selected = null;
+    legalTargets = [];
+    premoveTargets = [];
+    lastMove = null;
+    hintMove = null;
+    pendingPromotion = null;
+
+    document.getElementById("promotion").style.display = "none";
+
+    clearPremove(false);
+    clearArrows();
+
+    document.getElementById("blackThinking").textContent = "Ready";
+
+    render();
+}
+
+// ======================================================
+// GAME INTERFACE
+// ======================================================
+
+function updateInterface() {
+
+    const white = document.getElementById("whitePlayer");
+    const black = document.getElementById("blackPlayer");
+
+    white.classList.toggle(
+        "active",game.turn() === "w" && !game.isGameOver()
+    );
+
+    black.classList.toggle(
+        "active",game.turn() === "b" && !game.isGameOver()
+    );
+
+    if(game.isCheckmate()) {
+
+        statusBox.textContent =
+            game.turn() === "w"
+            ? "Checkmate! Stockfish wins!"
+            : "Checkmate! You win!";
+
+    } else if(game.isDraw()) {
+
+        statusBox.textContent = "Game drawn!";
+
+    } else if(game.isCheck()) {
+
+        statusBox.textContent =
+            game.turn() === "w"
+            ? "You are in check!"
+            : "Stockfish is in check!";
+
+    } else if(thinking) {
+
+        statusBox.textContent = premove
+            ? "AI thinking · Premove queued"
+            : "Stockfish is thinking...";
+
+    } else {
+
+        statusBox.textContent =
+            game.turn() === "w"
+            ? "Your turn!"
+            : "AI's turn!";
+    }
+
+    const moves = game.history({
+        verbose:true
+    });
+
+    historyBox.innerHTML = "";
+
+    if(moves.length === 0) {
+        historyBox.innerHTML =
+            '<div class="small-text">No moves yet.</div>';
+        return;
+    }
+
+    for(let i=0;i<moves.length;i+=2) {
+
+        const row = document.createElement("div");
+        row.className = "history-row";
+
+        const number = document.createElement("span");
+        number.textContent = (i/2+1)+".";
+
+        const whiteMove = document.createElement("span");
+        whiteMove.textContent = moves[i].san;
+
+        const blackMove = document.createElement("span");
+        blackMove.textContent = moves[i+1]
+            ? moves[i+1].san : "";
+
+        row.append(number,whiteMove,blackMove);
+        historyBox.appendChild(row);
+    }
+
+    historyBox.scrollTop = historyBox.scrollHeight;
+}
+
+// ======================================================
+// START
+// ======================================================
+
+render();
+
+</script>
+</body>
+</html>
+```
